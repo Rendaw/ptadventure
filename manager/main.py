@@ -1,6 +1,10 @@
 import sys
 import os.path
 import subprocess
+from collections import defaultdict
+import re
+import traceback
+import json
 
 from PyQt5.QtCore import (
     QObject,
@@ -22,6 +26,7 @@ from PyQt5.QtWidgets import (
     QLayout,
     QHBoxLayout,
     QVBoxLayout,
+    QMenu,
     QLineEdit,
     QListWidget,
     QTreeWidget,
@@ -47,16 +52,24 @@ from flowlayout import FlowLayout
 # open
 # tag editor
 
-icon_remove = QIcon('/home/fsandrew/downloads/material-design-icons/action/svg/design/ic_highlight_remove_24px.svg')
+one_file = '{one-file}'
+all_files = '{all-files}'
+
+icon_size = QSize(24, 24)
+icon_remove = None
+icons = {}
 
 eltype_labels = {
-    'inc': '',
-    'exc': '^',
-    'sort_asc': 'sort+:',
-    'sort_desc': 'sort-:',
-    'sort_rand': 'sort?:',
-    'col': 'col:',
+    'inc': 'include',
+    'exc': 'exclude',
+    'sort_asc': 'sort ascending',
+    'sort_desc': 'sort descending',
+    'sort_rand': 'randomize',
+    'col': 'show column',
 }
+
+long_ext_regex = re.compile(r'\.[^/]+$')
+short_ext_regex = re.compile(r'\.[^.]+$')
 
 known_columns = patricia.trie()
 
@@ -73,10 +86,66 @@ def limit(maxcount, generator):
 def to_gen(outer):
     return outer()
 
+class MouseLMRTreeWidget(QTreeWidget):
+    l_clicked_anywhere = pyqtSignal(QPoint)
+    m_clicked_anywhere = pyqtSignal(QPoint)
+    r_clicked_anywhere = pyqtSignal(QPoint)
+
+    def mousePressEvent(self, event):
+        done = False
+        if (
+                QApplication.mouseButtons() & Qt.LeftButton and 
+                self.receivers(self.l_clicked_anywhere) > 0):
+            self.l_clicked_anywhere.emit(event.globalPos())
+            done = True
+        if (
+                QApplication.mouseButtons() & Qt.MidButton and 
+                self.receivers(self.m_clicked_anywhere) > 0):
+            self.m_clicked_anywhere.emit(event.globalPos())
+            done = True
+        if (
+                QApplication.mouseButtons() & Qt.RightButton and 
+                self.receivers(self.r_clicked_anywhere) > 0):
+            self.r_clicked_anywhere.emit(event.globalPos())
+            done = True
+        if not done:
+            QTreeWidget.mousePressEvent(self, event)
+
+    def mouseReleaseEvent(self, event):
+        done = False
+        if (
+                QApplication.mouseButtons() & Qt.LeftButton and 
+                self.receivers(self.l_clicked_anywhere) > 0):
+            done = True
+        if (
+                QApplication.mouseButtons() & Qt.MidButton and 
+                self.receivers(self.m_clicked_anywhere) > 0):
+            done = True
+        if (
+                QApplication.mouseButtons() & Qt.RightButton and 
+                self.receivers(self.r_clicked_anywhere) > 0):
+            done = True
+        if not done:
+            QTreeWidget.mouseReleaseEvent(self, event)
+
 unwrap_root = os.path.join(
     appdirs.user_data_dir('polytaxis-unwrap', 'zarbosoft'),
     'mount',
 )
+
+def unwrap(path):
+    return os.path.join(unwrap_root, path[1:])
+
+def collapse(callback):
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.setInterval(200)
+    def out(*maybe_self):
+        out._maybe_self = maybe_self[:1]
+        timer.start()
+    out.stop = lambda: timer.stop()
+    timer.timeout.connect(lambda: callback(*out._maybe_self))
+    return out
 
 def default_open(paths):
     # TODO reimplement with configured apps, based on majority extension
@@ -92,6 +161,7 @@ def default_open(paths):
 
 class ElementBuilder(QObject):
     worker_result = pyqtSignal(int, list)
+
     def __init__(self):
         super(ElementBuilder, self).__init__()
         self.element = None
@@ -99,7 +169,6 @@ class ElementBuilder(QObject):
 
         self.query_unique = 0
         self.text = None
-        self.refresh_timer = QTimer()
         self.label = QLabel()
         self.entry = QLineEdit()
         self.entry_layout = QHBoxLayout()
@@ -112,20 +181,6 @@ class ElementBuilder(QObject):
         self.outer_widget = QWidget()
         self.outer_widget.setLayout(layout)
         
-        self.refresh_timer.setSingleShot(True)
-        self.refresh_timer.setInterval(200)
-        @self.refresh_timer.timeout.connect
-        def change_query_():
-            self.query_unique += 1
-            self.text = self.entry.text()
-            if self.element.type in ('sort_asc', 'sort_desc', 'sort_rand', 'col'):
-                for row, column in enumerate(known_columns.iter(self.text)):
-                    self.results.addItem(column)
-                    if column == self.text:
-                        self.results.setCurrentRow(row)
-            elif self.element.type in ('inc', 'exc'):
-                self.worker.build_query.emit(self.query_unique, self.text)
-
         @self.entry.textEdited.connect
         def edited(text):
             self.element.set_value(text)
@@ -143,11 +198,23 @@ class ElementBuilder(QObject):
                 self.results.addItem(value)
                 if value == self.text:
                     self.results.setCurrentRow(row)
+    
+    @collapse
+    def _reset_query(self):
+        self.query_unique += 1
+        self.text = self.entry.text()
+        if self.element.type in ('sort_asc', 'sort_desc', 'sort_rand', 'col'):
+            for row, column in enumerate(known_columns.iter(self.text)):
+                self.results.addItem(column)
+                if column == self.text:
+                    self.results.setCurrentRow(row)
+        elif self.element.type in ('inc', 'exc'):
+            self.worker.build_query.emit(self.query_unique, self.text)
 
     def change_query(self):
         self.worker.build_query.emit(-1, '')
         self.results.clear()
-        self.refresh_timer.start()
+        self._reset_query()
 
     def set_element(self, element):
         if self.element:
@@ -157,7 +224,7 @@ class ElementBuilder(QObject):
             self.worker.build_query.emit(-1, '')
             self.outer_widget.hide()
         else:
-            self.label.setText(eltype_labels[element.type])
+            self.label.setPixmap(icons[element.type].pixmap(icon_size, QIcon.Normal, QIcon.On))
             self.entry.setText(element.value)
             self.change_query()
             self.outer_widget.show()
@@ -178,24 +245,107 @@ class Display(QObject):
         self.excludes = None
         self.raw = []
 
-        self.results = QTreeWidget()
+        self.launchers = []
+
+        context_menu = QMenu()
+        open_menu = QMenu()
+        self.results = MouseLMRTreeWidget()
+        self.results.setSelectionMode(QTreeWidget.ExtendedSelection)
+        @self.results.customContextMenuRequested.connect
+        def callback(point):
+            context_menu.exec(point)
         self.results.header().hide()
         actions = QToolBar()
         tool_open = actions.addAction('Open')
+        tool_open.setMenu(open_menu)
         layout = QVBoxLayout()
         layout.addWidget(self.results)
         layout.addWidget(actions)
         self.outer_widget = QWidget()
         self.outer_widget.setLayout(layout)
-        
-        self.refresh_timer = QTimer()
-        self.refresh_timer.setSingleShot(True)
-        self.refresh_timer.setInterval(200)
-        @self.refresh_timer.timeout.connect
-        def change_query_():
-            self.worker.display_query.emit(
-                    self.query_unique, self.includes, self.excludes)
 
+        def do_open(option):
+            rows = [
+                self.raw[index.row()] 
+                for index in self.results.selectedIndexes()
+            ]
+            if not rows:
+                rows = self.raw
+            paths = [
+                unwrap(path) if option.get('unwrap', True) else path
+                for path in [
+                    next(iter(row['tags']['path'])) 
+                    for row in rows
+                ]
+            ]
+            if one_file in option['command']:
+                for path in paths:
+                    proc = subprocess.Popen(
+                        [
+                            path if arg == one_file else arg
+                            for arg in option['command']
+                        ],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    proc.stdin.close()
+                    proc.stdout.close()
+                    proc.stderr.close()
+            else:
+                if all_files not in option['command']:
+                    raise RuntimeError('Option {} doesn\'t have any filepath arguments.'.format(option['name']))
+                args = []
+                for arg in option['command']:
+                    if arg == all_files:
+                        args.extend(paths)
+                    else:
+                        args.append(arg)
+                proc = subprocess.Popen(
+                    args,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                proc.stdin.close()
+                proc.stdout.close()
+                proc.stderr.close()
+        
+        @collapse
+        def update_launch_concensus():
+            launch_sums = defaultdict(lambda: 0)
+            rows = [
+                self.raw[index.row()] 
+                for index in self.results.selectedIndexes()
+            ]
+            if not rows:
+                rows = self.raw
+            for data in rows:
+                for key in data['tags']['launch_keys']:
+                    launch_sums[key] += 1
+            self.launchers = []
+            for top in sorted(launch_sums.items(), key=lambda x: x[1]):
+                if len(self.launchers) > 5:
+                    break
+                launcher_bunch = keyed_launchers.get(top[0])
+                if not launcher_bunch:
+                    continue
+                self.launchers.extend(launcher_bunch)
+            self.launchers.extend(
+                wildcard_launchers
+            )
+
+            for menu in [open_menu, context_menu]:
+                menu.clear()
+                for launcher in self.launchers:
+                    action = menu.addAction(launcher['name'])
+                    def launch():
+                        do_open(launch.launcher)
+                    launch.launcher = launcher
+                    action.triggered.connect(launch)
+            if self.launchers:
+                tool_open.setText('Open with ' + self.launchers[0]['name'])
+        
         @self.worker_result.connect
         def handle_result(unique, rows):
             if unique != self.query_unique:
@@ -205,10 +355,36 @@ class Display(QObject):
                     known_columns[key] = None
             self.raw.extend(rows)
             self._redisplay()
+            update_launch_concensus()
+
+        @self.results.m_clicked_anywhere.connect
+        def handle_m_clicked():
+            self.results.clearSelection()
+        
+        @self.results.itemSelectionChanged.connect
+        def callback():
+            update_launch_concensus()
+
+        @self.results.r_clicked_anywhere.connect
+        def handle_r_clicked(position):
+            context_menu.exec(position)
 
         @self.results.doubleClicked.connect
         def handle_clicked(index):
-            default_open([next(iter(self.raw[index.row()]['tags']['path']))])
+            if not self.launchers:
+                return
+            do_open(self.launchers[0])
+
+        @tool_open.triggered.connect
+        def handle_clicked(index):
+            if not self.launchers:
+                return
+            do_open(self.launchers[0])
+        
+    @collapse
+    def _reset_query(self):
+        self.worker.display_query.emit(
+                self.query_unique, self.includes, self.excludes)
     
     def _redisplay(self):
         self.raw = ptcommon.sort(self.sort, self.raw)
@@ -246,7 +422,7 @@ class Display(QObject):
             self.raw = []
             self.includes = includes
             self.excludes = excludes
-            self.refresh_timer.start()
+            self._reset_query()
 
         if columns != self.columns or sort != self.sort:
             self.columns = columns
@@ -261,8 +437,48 @@ class Display(QObject):
                 self.columns = ['path']
             self._redisplay()
 
+wildcard_launchers = []
+keyed_launchers = defaultdict(lambda: [])
 def main():
+    launchers_path = os.path.join(
+        appdirs.user_config_dir('polytaxis-adventure'),
+        'launchers.json',
+    )
+    try:
+        with open(launchers_path, 'r') as launchers_file:
+            launchers = json.load(launchers_file)
+        for launcher in launchers:
+            for key in launcher['keys']:
+                if key == '*':
+                    wildcard_launchers.append(launcher)
+                else:
+                    keyed_launchers[key].append(launcher)
+    except:
+        print('Failed to load {}:\n{}'.format(
+            launchers_path, 
+            traceback.format_exc())
+        )
+
     app = QApplication(sys.argv)
+
+    global icon_remove
+    icon_remove = QIcon('/home/fsandrew/downloads/material-design-icons/action/svg/design/ic_highlight_remove_24px.svg')
+    global icons
+    icons = {
+        key: QIcon('/home/fsandrew/temp/ren/ptcommander/icon_{}.png'.format(key))
+        for key in [
+            'exc',
+            'inc',
+            'col',
+            'sort_asc',
+            'sort_desc',
+            'sort_rand',
+        ]
+    }
+    icons['logo'] = QIcon('/home/fsandrew/temp/ren/ptcommander/logo.png')
+    for icon in icons.values():
+        if not icon:
+            raise RuntimeError('Unable to load icon {}'.format(icon))
 
     class Worker(QObject):
         build_query = pyqtSignal(int, str)
@@ -339,6 +555,16 @@ def main():
                         if not rows:
                             raise StopIteration()
                         count += len(rows)
+                        for row in rows:
+                            path = next(iter(row['tags']['path']))
+                            long_ext = long_ext_regex.findall(path)
+                            short_ext = short_ext_regex.findall(path)
+                            launch_keys = set()
+                            if long_ext:
+                                launch_keys.add(long_ext[0])
+                            if short_ext:
+                                launch_keys.add(short_ext[0])
+                            row['tags']['launch_keys'] = launch_keys
                         self.display.worker_result.emit(unique, rows)
                         if count >= 1000:
                             break
@@ -364,13 +590,17 @@ def main():
     worker.display = display
 
     # Query bar
+    appicon = QLabel()
+    appicon.setPixmap(icons['logo'].pixmap(QSize(48, 64), QIcon.Normal, QIcon.On))
+
     query = FlowLayout()
     query_toolbar = QToolBar()
+    query_toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
     def create_query_element_action(eltype):
-        action = query_toolbar.addAction(eltype)
+        ellabel = eltype_labels[eltype]
+        action = query_toolbar.addAction(icons[eltype], ellabel)
         def create(ign1):
-            ellabel = eltype_labels[eltype]
-            toggle = QPushButton(ellabel)
+            toggle = QPushButton(icons[eltype], '')
             toggle.setCheckable(True)
             toggle.setObjectName('button')
             delete = QPushButton(icon_remove, 'remove')
@@ -390,7 +620,7 @@ def main():
 
                 def set_value(self, value):
                     self.value = value
-                    toggle.setText(ellabel + value)
+                    toggle.setText(value)
                     display.change_query()
 
                 def auto_deselect(self):
@@ -437,6 +667,10 @@ def main():
     query_layout = QVBoxLayout()
     query_layout.addLayout(query)
     query_layout.addWidget(query_toolbar)
+    
+    total_query_layout = QHBoxLayout()
+    total_query_layout.addWidget(appicon)
+    total_query_layout.addLayout(query_layout, 1)
 
     # Assemblage
     bottom_splitter = QSplitter(Qt.Horizontal)
@@ -444,7 +678,7 @@ def main():
     bottom_splitter.addWidget(display.outer_widget)
 
     total_layout = QVBoxLayout()
-    total_layout.addLayout(query_layout)
+    total_layout.addLayout(total_query_layout)
     total_layout.addWidget(bottom_splitter, 1)
 
     window = QWidget()
