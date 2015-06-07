@@ -11,7 +11,7 @@ def draw_rect(context, linewidth, color, left, right, top, bottom):
     off_y = context.off_y
     if linewidth is not None:
         ctx.set_line_width(linewidth)
-    ctx.set_source_rgb(*color)
+    ctx.set_source_rgba(*(color + (context.transparent,)))
     ctx.move_to(off_x + left * x, off_y + top * y)
     ctx.line_to(off_x + left * x, off_y + bottom * y)
     ctx.line_to(off_x + right * x, off_y + bottom * y)
@@ -29,7 +29,7 @@ def draw_line(context, linewidth, color, x1, y1, x2, y2):
     y = context.y
     off_y = context.off_y
     ctx.set_line_width(linewidth)
-    ctx.set_source_rgb(*color)
+    ctx.set_source_rgba(*(color + (context.transparent,)))
     ctx.move_to(off_x + x1 * x, off_y + y1 * y)
     ctx.line_to(off_x + x2 * x, off_y + y2 * y)
     ctx.stroke()
@@ -50,7 +50,7 @@ def draw_text(context, fsize, color, x1, y1, text):
     font = Pango.FontDescription('sans {}'.format(fsize))
     layout.set_font_description(font)
     layout.set_text(text, -1)
-    c.set_source_rgb(*color)
+    c.set_source_rgba(*(color + (context.transparent,)))
     transform(context, x1, y1, 0)
     PangoCairo.update_layout(c, layout)
     PangoCairo.show_layout(c, layout)
@@ -64,6 +64,7 @@ def create(fname, x, y):
         off_y = None
         surf = None
         cairo = None
+        transparent = 1
 
         _fname = None
         def done(self):
@@ -144,5 +145,11 @@ for method in [
         ]:
     icon = create(method.__name__, 24, 24)
     method(icon)
+    draw_rect(icon, thickb1, black1, 0, 1, 0, 1)
+    icon.done()
+
+    icon = create(method.__name__ + '-light', 24, 24)
+    method(icon)
+    icon.transparent = 0.5
     draw_rect(icon, thickb1, black1, 0, 1, 0, 1)
     icon.done()

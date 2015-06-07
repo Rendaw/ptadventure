@@ -1,0 +1,34 @@
+{
+	"window-layout": {
+		"contentsMargins": [4, 4, 4, 4],
+		"spacing": 2
+	},
+	"bottom-splitter": {
+		"styleSheet": {
+			"::handle:vertical": {
+				"height": "6px"
+			}
+		}
+	},
+	"query-layout": {
+		"spacing": 6
+	},
+	"top-layout": {
+		"spacing": 6
+	},
+	"query-toolbar": {
+		"styleSheet": {
+			"": {
+				"icon-size": "16px",
+				"margin": "0"
+			}
+		}
+	},
+	"builder-layout": {
+		"spacing": 2
+	},
+	"builder-head-layout": {
+		"spacing": 4
+	},
+	"": {}
+}
