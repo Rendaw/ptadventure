@@ -98,7 +98,6 @@ def stylable(cls):
                 if not hasattr(self, 'setStyleSheet'):
                     print('no setStyleSheet! {}'.format(cls.__name__))
                 else:
-                    print('using ss {}'.format(stylesheet))
                     self.setStyleSheet(stylesheet)
             trym(self, 'setMinimumWidth', style.pop('min-width', 0))
             trym(self, 'setMinimumHeight', style.pop('min-height', 0))

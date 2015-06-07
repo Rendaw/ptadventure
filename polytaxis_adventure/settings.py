@@ -5,7 +5,7 @@ import pkg_resources
 import appdirs
 
 def res(path):
-    return pkg_resources.resource_string('polytaxis_adventure', path)
+    return pkg_resources.resource_filename('polytaxis_adventure', 'data/' + path)
 
 with open(res('style.json'), 'r') as style_file:
     style_settings = json.load(style_file)
