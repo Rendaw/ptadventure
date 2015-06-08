@@ -103,14 +103,20 @@ class ElementBuilder(QObject):
         self.outer_widget = QFrame(tags=['builder-widget'])
         self.outer_widget.setLayout(layout)
         
+        suppress_row_select = [False]
+
         @self.entry.textEdited.connect
         def edited(text):
             self.element.set_value(text)
+            self.element.last_query = self.text
             self.change_query()
 
         @self.results.currentTextChanged.connect
         def selected(text):
+            if suppress_row_select[0]:
+                return
             self.element.set_value(text)
+            self.entry.setText(text)
 
         @self.worker_result.connect
         def handle_result(unique, values):
@@ -119,7 +125,9 @@ class ElementBuilder(QObject):
             for row, value in enumerate(values):
                 self.results.addItem(value)
                 if value == self.text:
+                    suppress_row_select[0] = True
                     self.results.setCurrentRow(row)
+                    suppress_row_select[0] = False
     
     @collapse
     def _reset_query(self):
@@ -131,7 +139,7 @@ class ElementBuilder(QObject):
                 if column == self.text:
                     self.results.setCurrentRow(row)
         elif self.element.type in ('inc', 'exc'):
-            self.worker.build_query.emit(self.query_unique, self.text)
+            self.worker.build_query.emit(self.query_unique, self.element.last_query)
 
     def change_query(self):
         self.worker.build_query.emit(-1, '')
@@ -139,6 +147,8 @@ class ElementBuilder(QObject):
         self._reset_query()
 
     def set_element(self, element):
+        if element == self.element:
+            return
         if self.element:
             self.element.auto_deselect()
         self.element = element
@@ -329,7 +339,7 @@ class Display(QObject):
         columns = []
         sort = []
         for element in elements:
-            if element.type in ('col', 'sort_asc', 'sort_desc', 'sort_rand'):
+            if element.type in ('col', 'sort_asc', 'sort_desc', 'sort_rand') and element.value:
                 columns.append(element.value)
             if element.type == 'sort_asc':
                 sort.append(('asc', element.value))
@@ -540,6 +550,7 @@ def main():
             class Element():
                 type = eltype
                 value = ''
+                last_query = ''
 
                 def set_value(self, value):
                     self.value = value
