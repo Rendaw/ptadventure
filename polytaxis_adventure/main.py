@@ -115,6 +115,8 @@ class ElementBuilder(QObject):
         def selected(text):
             if suppress_row_select[0]:
                 return
+            if not text:
+                return
             self.element.set_value(text)
             self.entry.setText(text)
 
@@ -134,7 +136,7 @@ class ElementBuilder(QObject):
         self.query_unique += 1
         self.text = self.entry.text()
         if self.element.type in ('sort_asc', 'sort_desc', 'sort_rand', 'col'):
-            for row, column in enumerate(known_columns.iter(self.text)):
+            for row, column in enumerate(known_columns.iter(self.element.last_query)):
                 self.results.addItem(column)
                 if column == self.text:
                     self.results.setCurrentRow(row)
@@ -330,7 +332,11 @@ class Display(QObject):
 
     def change_query(self):
         self.worker.display_query.emit(-1, set(), set())
-        self.results.clear()
+        cleared = [False]
+        def clear():
+            if not cleared[0]:
+                cleared[0] = True
+            self.results.clear()
 
         includes = {
             element.value for element in elements if element.type == 'inc'}
@@ -354,6 +360,7 @@ class Display(QObject):
             self.raw = []
             self.includes = includes
             self.excludes = excludes
+            clear()
             self._reset_query()
 
         if columns != self.columns or sort != self.sort:
@@ -367,6 +374,7 @@ class Display(QObject):
                 self.results.header().hide()
                 self.results.setColumnCount(1)
                 self.columns = ['path']
+            clear()
             self._redisplay()
 
 wildcard_launchers = []
