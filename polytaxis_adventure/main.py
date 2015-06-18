@@ -530,8 +530,9 @@ def main():
     worker.display = display
 
     # Query bar
-    appicon = QLabel(tags=['appicon'])
-    appicon.setPixmap(icons['logo'])
+    appicon = QToolButton(tags=['appicon'])
+    appicon.setIcon(QIcon(icons['logo']))
+    appicon.setIconSize(QSize(48, 48))
 
     query = FlowLayout(tags=['query-layout'])
     query_toolbar = QToolBar(tags=['query-toolbar'])

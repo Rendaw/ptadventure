@@ -1,4 +1,11 @@
 {
+	"appicon": {
+		"styleSheet": {
+			"": {
+				"padding": "4px"
+			}
+		}
+	},
 	"window-layout": {
 		"contentsMargins": [4, 4, 4, 4],
 		"spacing": 2
