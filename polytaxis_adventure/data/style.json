@@ -6,6 +6,16 @@
 			}
 		}
 	},
+	"query-empty": {
+		"styleSheet": {
+			"": {
+				"font-size": "16pt",
+				"font-family": "sans",
+				"color": "LightGray",
+				"min-height": "38px"
+			}
+		}
+	},
 	"window-layout": {
 		"contentsMargins": [4, 4, 4, 4],
 		"spacing": 2

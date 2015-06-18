@@ -543,6 +543,8 @@ def main():
             element.destroy()
 
     query = FlowLayout(tags=['query-layout'])
+    query_empty = QLabel('empty query', tags=['query-empty'])
+    query.addWidget(query_empty)
     query_toolbar = QToolBar(tags=['query-toolbar'])
     query_toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
     def create_query_element_action(eltype):
@@ -562,6 +564,7 @@ def main():
             toggle = LayoutPushButton(tags=['element-toggle', eltype])
             toggle.setLayout(layout)
             query.addWidget(toggle)
+            query_empty.hide()
             delete.hide()
 
             class Element():
@@ -592,6 +595,8 @@ def main():
                     elements.remove(self)
                     display.change_query()
                     query.removeWidget(toggle)
+                    if not elements:
+                        query_empty.show()
 
             element = Element()
             
