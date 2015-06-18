@@ -192,6 +192,7 @@ class Display(QObject):
         actions = QToolBar(tags=['display-toolbar'])
         tool_open = actions.addAction('Open')
         tool_open.setMenu(open_menu)
+        tool_open.setEnabled(False)
         layout = QVBoxLayout(tags=['display-layout'])
         layout.addWidget(self.results)
         layout.addWidget(actions)
@@ -279,6 +280,7 @@ class Display(QObject):
                     action.triggered.connect(launch)
             if self.launchers:
                 tool_open.setText('Open with ' + self.launchers[0]['name'])
+            tool_open.setEnabled(bool(self.launchers))
         
         @self.worker_result.connect
         def handle_result(unique, rows):
@@ -361,7 +363,8 @@ class Display(QObject):
             self.includes = includes
             self.excludes = excludes
             clear()
-            self._reset_query()
+            if self.includes or self.excludes:
+                self._reset_query()
 
         if columns != self.columns or sort != self.sort:
             self.columns = columns
@@ -373,7 +376,8 @@ class Display(QObject):
             else:
                 self.results.header().hide()
                 self.results.setColumnCount(1)
-                self.columns = ['path']
+                self.columns = ['filename']
+                self.sort.append(('asc', 'filename'))
             clear()
             self._redisplay()
 
@@ -497,13 +501,13 @@ def main():
                         count += len(rows)
                         for row in rows:
                             path = next(iter(row['tags']['path']))
-                            long_ext = long_ext_regex.findall(path)
-                            short_ext = short_ext_regex.findall(path)
+                            filename = ptcommon.split_abs_path(path)[-1]
+                            row['tags']['filename'] = {filename}
+                            filename_splits = filename.split('.')
                             launch_keys = set()
-                            if long_ext:
-                                launch_keys.add(long_ext[0])
-                            if short_ext:
-                                launch_keys.add(short_ext[0])
+                            for index in range(1, len(filename_splits)):
+                                launch_keys.add(
+                                    '.' + '.'.join(filename_splits[index:]))
                             row['tags']['launch_keys'] = launch_keys
                         self.display.worker_result.emit(unique, rows)
                         if count >= 1000:
@@ -533,6 +537,10 @@ def main():
     appicon = QToolButton(tags=['appicon'])
     appicon.setIcon(QIcon(icons['logo']))
     appicon.setIconSize(QSize(48, 48))
+    @appicon.clicked.connect
+    def callback(checked):
+        for element in elements:
+            element.destroy()
 
     query = FlowLayout(tags=['query-layout'])
     query_toolbar = QToolBar(tags=['query-toolbar'])
