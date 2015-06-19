@@ -2,7 +2,6 @@ import sys
 import os.path
 import subprocess
 from collections import defaultdict
-import re
 import traceback
 import json
 
@@ -52,12 +51,10 @@ eltype_labels = {
     'col': 'show column',
 }
 
-long_ext_regex = re.compile(r'\.[^/]+$')
-short_ext_regex = re.compile(r'\.[^.]+$')
-
 known_columns = patricia.trie()
 
 elements = []
+drag_targets = []
 
 def to_gen(outer):
     return outer()
@@ -74,12 +71,41 @@ def collapse(callback):
     timer = QTimer()
     timer.setSingleShot(True)
     timer.setInterval(200)
-    def out(*maybe_self):
-        out._maybe_self = maybe_self[:1]
+    def out(*pargs, **kwargs):
+        out.pargs = pargs
+        out.kwargs = kwargs
         timer.start()
     out.stop = lambda: timer.stop()
-    timer.timeout.connect(lambda: callback(*out._maybe_self))
+    timer.timeout.connect(lambda: callback(*out.pargs, **out.kwargs))
     return out
+
+class DragTarget(QFrame):
+    dropped = pyqtSignal()
+
+    def __init__(self, *pargs, parent=None, **kwargs):
+        super(DragTarget, self).__init__(*pargs, **kwargs)
+        self.setAcceptDrops(True)
+ 
+    def dragEnterEvent(self, event):
+        self.setProperty('drag-hover', True)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+        event.accept()
+    
+    def dragLeaveEvent(self, event):
+        self.setProperty('drag-hover', False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+        super().dragLeaveEvent(event)
+ 
+    def dropEvent(self, event):
+        self.dropped.emit()
+
+@enable_drag
+class ElementButton(LayoutPushButton):
+    pass
 
 class ElementBuilder(QObject):
     worker_result = pyqtSignal(int, list)
@@ -318,9 +344,8 @@ class Display(QObject):
             do_open(self.launchers[0])
         
     @collapse
-    def _reset_query(self):
-        self.worker.display_query.emit(
-                self.query_unique, self.includes, self.excludes)
+    def _reset_query(self, unique):
+        self.worker.display_query.emit(unique, self.includes, self.excludes)
     
     def _redisplay(self):
         self.raw = ptcommon.sort(self.sort, self.raw)
@@ -364,7 +389,7 @@ class Display(QObject):
             self.excludes = excludes
             clear()
             if self.includes or self.excludes:
-                self._reset_query()
+                self._reset_query(self.query_unique)
 
         if columns != self.columns or sort != self.sort:
             self.columns = columns
@@ -537,9 +562,10 @@ def main():
     appicon = QToolButton(tags=['appicon'])
     appicon.setIcon(QIcon(icons['logo']))
     appicon.setIconSize(QSize(48, 48))
+    appicon.setToolTip('Clear query')
     @appicon.clicked.connect
     def callback(checked):
-        for element in elements:
+        for element in elements[:]:
             element.destroy()
 
     query = FlowLayout(tags=['query-layout'])
@@ -552,65 +578,99 @@ def main():
         action = QAction(QIcon(icons[eltype]), ellabel, query_toolbar, tags=['query-tool', eltype])
         query_toolbar.addAction(action)
         def create(ign1):
-            layout = QHBoxLayout(tags=['element-layout', eltype])
-            icon = QLabel(tags=['element-icon', eltype])
-            icon.setPixmap(icons[eltype])
-            layout.addWidget(icon)
-            text = QLabel(tags=['element-text', eltype])
-            layout.addWidget(text)
-            delete = QToolButton(tags=['element-remove', eltype])
-            delete.setIcon(QIcon(icon_remove))
-            layout.addWidget(delete)
-            toggle = LayoutPushButton(tags=['element-toggle', eltype])
-            toggle.setLayout(layout)
-            query.addWidget(toggle)
-            query_empty.hide()
-            delete.hide()
-
             class Element():
                 type = eltype
                 value = ''
                 last_query = ''
 
+                def recreate_widgets(self):
+                    layout = QHBoxLayout(tags=['element-layout', eltype])
+                    icon = QLabel(tags=['element-icon', eltype])
+                    icon.setPixmap(icons[eltype])
+                    layout.addWidget(icon)
+                    self.text = QLabel(self.value, tags=['element-text', eltype])
+                    layout.addWidget(self.text)
+                    self.delete = QToolButton(tags=['element-remove', eltype])
+                    self.delete.setIcon(QIcon(icon_remove))
+                    layout.addWidget(self.delete)
+                    self.toggle = ElementButton(tags=['element-toggle', eltype])
+                    self.toggle.setLayout(layout)
+                    self.delete.hide()
+            
+                    @self.toggle.toggled.connect
+                    def click_action(checked):
+                        if checked:
+                            self.select()
+                        else:
+                            self.deselect()
+
+                    def clear_drag():
+                        for target in drag_targets:
+                            query.removeWidget(target)
+                        del drag_targets[:]
+
+                    @self.toggle.drag_start.connect
+                    def callback():
+                        sindex = elements.index(self)
+                        for index in range(len(elements) + 1):
+                            if index in (sindex, sindex + 1):
+                                continue
+                            target = DragTarget(tags=['drag-target'])
+                            @target.dropped.connect
+                            def callback(index=index, sindex=sindex):
+                                clear_drag()
+                                dindex = index if index < sindex else index - 1
+                                elements.insert(dindex, elements.pop(sindex))
+                                display.change_query()
+                                was_checked = self.toggle.checked()
+                                query.removeWidget(self.toggle)
+                                self.recreate_widgets()
+                                query.insertWidget(dindex + 1, self.toggle)
+                                if was_checked:
+                                    self.select()
+                            query.insertWidget(index + len(drag_targets) + 1, target)
+                            drag_targets.append(target)
+                    
+                    @self.toggle.drag_stop.connect
+                    def callback():
+                        clear_drag()
+
+                    @self.delete.clicked.connect
+                    def delete_action(checked):
+                        self.destroy()
+
+                def __init__(self):
+                    self.recreate_widgets()
+                    query.addWidget(self.toggle)
+                    query_empty.hide()
+
                 def set_value(self, value):
                     self.value = value
-                    text.setText(value)
+                    self.text.setText(value)
                     display.change_query()
 
                 def auto_deselect(self):
-                    toggle.setChecked(False)
-                    delete.hide()
+                    self.toggle.setChecked(False)
+                    self.delete.hide()
 
                 def deselect(self):
                     build.set_element(None)
-                    delete.hide()
+                    self.delete.hide()
 
                 def select(self):
                     build.set_element(self)
-                    toggle.setChecked(True)
-                    delete.show()
+                    self.toggle.setChecked(True)
+                    self.delete.show()
 
                 def destroy(self):
                     self.deselect()
                     elements.remove(self)
                     display.change_query()
-                    query.removeWidget(toggle)
+                    query.removeWidget(self.toggle)
                     if not elements:
                         query_empty.show()
 
             element = Element()
-            
-            @toggle.toggled.connect
-            def click_action(checked):
-                if checked:
-                    element.select()
-                else:
-                    element.deselect()
-
-            @delete.clicked.connect
-            def delete_action(checked):
-                element.destroy()
-
             element.select()
             elements.append(element)
 

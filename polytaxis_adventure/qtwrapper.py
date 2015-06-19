@@ -11,10 +11,13 @@ from PyQt5.QtCore import (
     QSize,
     Qt,
     pyqtSignal,
+    QMimeData,
+    QEvent,
 )
 from PyQt5.QtGui import (
     QIcon,
     QPainter,
+    QDrag,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -212,11 +215,13 @@ class LayoutPushButton(_QFrame):
             self.state = _state_up
             self.update()
 
+    def checked(self):
+        return self.state == _state_down
+
     def mousePressEvent(self, event):
         if self.state == _state_up:
             self.state = _state_pressing
             self.update()
-        self.grabMouse
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -275,3 +280,30 @@ class QToolBar(_QToolBar):
 class QSplitter(_QSplitter):
     pass
 
+def enable_drag(cls):
+    class Out(cls):
+        drag_start = pyqtSignal()
+        drag_stop = pyqtSignal()
+        left_start = None
+
+        def mousePressEvent(self, event):
+            super().mousePressEvent(event)
+            if event.buttons() == Qt.LeftButton:
+                self.left_start = event.globalPos()
+
+        def mouseMoveEvent(self, event):
+            super().mouseMoveEvent(event)
+            if (
+                    event.buttons() == Qt.LeftButton and 
+                    self.left_start is not None and 
+                    (event.globalPos() - self.left_start).manhattanLength() >=
+                        QApplication.startDragDistance()
+                    ):
+                self.drag_start.emit()
+                mime = QMimeData()
+                drag = QDrag(self)
+                drag.setMimeData(mime)
+                self.left_start = None
+                drag.exec_(Qt.MoveAction)
+                self.drag_stop.emit()
+    return Out

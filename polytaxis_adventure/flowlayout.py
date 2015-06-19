@@ -150,6 +150,11 @@ class FlowLayout(QLayout):
 
         return y + lineHeight - rect.y()
 
+    def insertWidget(self, index, widget):
+        # added per http://stackoverflow.com/questions/17785729/how-to-add-an-item-to-the-specific-index-in-the-layout
+        self.addWidget(widget)
+        self.itemList.insert(index, self.itemList.pop(len(self.itemList) - 1))
+
 
 if __name__ == '__main__':
 

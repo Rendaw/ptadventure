@@ -47,5 +47,18 @@
 	"builder-head-layout": {
 		"spacing": 4
 	},
+	"drag-target": {
+		"styleSheet": {
+			"": {
+				"min-width": "32px",
+				"min-height": "32px"
+			},
+			"[drag-hover=\"true\"]": {
+				"border": "2px solid black",
+				"min-width": "28px",
+				"min-height": "28px"
+			}
+		}
+	},
 	"": {}
 }
