@@ -274,7 +274,7 @@ class Display(QObject):
         
         @collapse
         def update_launch_concensus():
-            launch_sums = defaultdict(lambda: 0)
+            launch_sums = defaultdict(lambda: {'count': 0, 'launcher': None})
             rows = [
                 self.raw[index.row()] 
                 for index in self.results.selectedIndexes()
@@ -283,12 +283,21 @@ class Display(QObject):
                 rows = self.raw
             for data in rows:
                 for key in data['tags']['launch_keys']:
-                    launch_sums[key] += 1
+                    launcher_bunch = keyed_launchers.get(key)
+                    if launcher_bunch:
+                        launch_sum = launch_sums.get(id(launcher_bunch))
+                        if not launch_sum:
+                            launch_sum = {
+                                'count': 0,
+                                'launcher_bunch': launcher_bunch,
+                            }
+                            launch_sums[id(launcher_bunch)] = launch_sum
+                        launch_sum['count'] += 1
             self.launchers = []
-            for top in sorted(launch_sums.items(), key=lambda x: x[1]):
+            for top in sorted(launch_sums.items(), key=lambda x: x[1]['count']):
                 if len(self.launchers) > 5:
                     break
-                launcher_bunch = keyed_launchers.get(top[0])
+                launcher_bunch = top[1]['launcher_bunch']
                 if not launcher_bunch:
                     continue
                 self.launchers.extend(launcher_bunch)
