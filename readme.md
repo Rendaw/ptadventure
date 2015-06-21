@@ -15,8 +15,7 @@ pip install https://github.com/Rendaw/ptadventure.git
 1. Install homebrew
 2. Run
 ```
-brew tap rendaw/tap
-brew install polytaxis-adventure
+brew install --HEAD rendaw/tap/polytaxis-adventure
 ```
 
 # Configuration
