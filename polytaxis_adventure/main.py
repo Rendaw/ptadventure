@@ -29,7 +29,6 @@ from .settings import res
 
 # TODO
 # element types to vars
-# order element
 # save queries
 
 # tag editor
@@ -134,7 +133,7 @@ class ElementBuilder(QObject):
         @self.entry.textEdited.connect
         def edited(text):
             self.element.set_value(text)
-            self.element.last_query = self.text
+            self.element.last_query = text
             self.change_query()
 
         @self.results.currentTextChanged.connect
