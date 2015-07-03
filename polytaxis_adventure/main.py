@@ -380,7 +380,11 @@ class Display(QObject):
         columns = []
         sort = []
         for element in elements:
-            if element.type in ('col', 'sort_asc', 'sort_desc', 'sort_rand') and element.value:
+            if (
+                    element.type in ('col', 'sort_asc', 'sort_desc', 'sort_rand') 
+                    and element.value 
+                    and element.value not in columns
+                    ):
                 columns.append(element.value)
             if element.type == 'sort_asc':
                 sort.append(('asc', element.value))
