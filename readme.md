@@ -79,3 +79,15 @@ An example `launchers.json`:
 `mpv music` will open all files with `mpv` in a new terminal.
 
 `export` will copy files to `/home/rendaw/pt-collection`.
+
+# Support
+
+Ask questions and raise issues on the GitHub issue tracker.
+
+See Contributing below for information about prioritizing issues.
+
+# Contributing
+
+1. Develop and submit pull requests.
+
+2. Fund development via https://www.bountysource.com/
