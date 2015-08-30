@@ -304,14 +304,15 @@ class Display(QObject):
                 wildcard_launchers
             )
 
+            def build_action(menu, launcher):
+                action = menu.addAction(launcher['name'])
+                def launch():
+                    do_open(launcher)
+                action.triggered.connect(launch)
             for menu in [open_menu, context_menu]:
                 menu.clear()
                 for launcher in self.launchers:
-                    action = menu.addAction(launcher['name'])
-                    def launch():
-                        do_open(launch.launcher)
-                    launch.launcher = launcher
-                    action.triggered.connect(launch)
+                    build_action(menu, launcher)
             if self.launchers:
                 tool_open.setText('Open with ' + self.launchers[0]['name'])
             tool_open.setEnabled(bool(self.launchers))
